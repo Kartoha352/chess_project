@@ -52,8 +52,6 @@ class Confirm_super_charge_view(disnake.ui.View):
     @disnake.ui.button(label="Выбрать", style=disnake.ButtonStyle.green, custom_id = "select")
     async def select(self, button: disnake.ui.Button, inter: disnake.MessageInteraction):
         if inter.author.id == self.user.id:
-            print(self.start_row, self.start_col)
-            print(self.board[self.start_row][self.start_col])
             await update_game_info(self.ctx, self.game_id, self.bot, "edit", self.start_row, self.start_col)
             await inter.response.send_message("Выбор сделан. Теперь выберите клетку куда хотите походить.", delete_after=5.0)
             await inter.message.delete()

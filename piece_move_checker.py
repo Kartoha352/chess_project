@@ -81,7 +81,7 @@ def get_pawn_moves(player_id, board, start_row, start_col):
     for diag_col in [start_col - 1, start_col + 1]:
         row = start_row + direction
         if 0 <= row < 8 and 0 <= diag_col < 8:
-            if board[row][diag_col] != " " and board[row][col][-1] != board[start_row][start_col][-1]:
+            if board[row][diag_col] != " " and board[row][diag_col][-1] != board[start_row][start_col][-1]:
                 moves.append((row, diag_col))
     
     return moves

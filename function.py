@@ -2,7 +2,7 @@ from PIL import Image, ImageDraw, ImageFont
 from disnake.ext import commands
 from logic import DB_Manager
 from config import *
-import json, io, disnake, asyncio, time 
+import json, io, disnake, asyncio, time, pprint
 from piece_move_checker import *
 from super_moves import *
 
@@ -21,7 +21,7 @@ super_checks = {"P": get_pawn_super_moves,
         "B": get_bishop_super_moves,
         "R": "rook",
         "N": get_knight_super_moves,
-        "K": "king",
+        "K": get_king_moves,
         "Q": "queen"}
 
 #функция для изменения сообщения с инфой об игре.
@@ -103,8 +103,12 @@ async def update_game_info(ctx: commands.Context|disnake.InteractionMessage, gam
         if color == "B":
             col_labels, row_labels = black_board()
         else:
-            if selected_row:
-                col_labels, row_labels, board, selected_row, selected_col  = white_board(board, selected_row, selected_col)
+            if selected_row != None:
+                if selected_row != None:
+                    col_labels, row_labels, reverse_board, selected_row, selected_col = white_board(board, selected_row, selected_col)
+                else:
+                    col_labels, row_labels, reverse_board = white_board(board)
+                board = reverse_board
             else:
                 col_labels, row_labels, board  = white_board(board)
 
@@ -142,7 +146,7 @@ def white_board(board, selected_row=None, selected_col=None):
     # Перевернутая нумерация столбцов (a-h становится h-a)
     col_labels = ['h', 'g', 'f', 'e', 'd', 'c', 'b', 'a']
 
-    if selected_row:
+    if selected_row != None:
         reversed_selected_row = 7 - selected_row
         reversed_selected_col = 7 - selected_col
 
@@ -184,6 +188,7 @@ async def wait_for_first_square(bot, turn_player, ctx:commands.Context, start_ti
             await update_game_info(ctx, game_id, bot, "on_timeout")
             manager.end_game(game_id)
             break
+        
         msg = await wait_for_message(bot, turn_player, ctx.channel, remaining_time)
         if msg:
             await msg.delete()
@@ -270,10 +275,17 @@ async def wait_for_second_square(bot, turn_player, ctx:commands.Context, start_r
                     #новые возможнные ходы и король противника
                     moves_check = checks[board[start_row][start_col][0]]
                     new_moves = moves_check(turn_player.id, board, end_row, end_col)
+                    board_2 = board
+                    board_2[end_row][end_col] = 0
+                    pprint.pprint(board_2)
+                    print(new_moves)
                     opponent_color = "B" if color == "W" else "W"
                     opponent_king = manager.get_king_place(game_id, opponent_color)
+                    print(opponent_king)
                     if player[4] < 10:
                         manager.edit_player(turn_player.id, "charge_count", 1)
+                    if player[3] == 1:
+                        manager.edit_player(turn_player.id, "check", 0)
 
                     #Проверка на шах противнику
                     if opponent_king in new_moves:
@@ -308,11 +320,11 @@ async def wait_for_second_square(bot, turn_player, ctx:commands.Context, start_r
                 elif moves_check == "queen":#Даёт доп ход любой фигуре
                     result = await queen_super_move(player, game_id, color, board, turn_player, start_row, start_col, bot, ctx, end_row, end_col)
                     if result != "end":
-                        await ctx.send("Вы использовали супер-ход королевы.\nВыберите новую фигуру для хода.")
+                        await ctx.send("Вы использовали супер-ход королевы.\nВыберите новую фигуру для хода.", delete_after=5.0)
                         await wait_for_first_square(bot, turn_player, ctx)
                 else:#Король. Вокруг себя делает не пробиваемую стену
                     print("else")
-                #тут ход фигур которые не нуждаются в выборе клетки для хода. Ладья, королева и король.
+                break
         else:
             game_id = manager.get_game_id(turn_player.id)
             opponent_player = manager.get_opponent_player(game_id, turn_player.id)
