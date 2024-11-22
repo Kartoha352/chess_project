@@ -1,7 +1,5 @@
-import sqlite3
 from config import DATABASE
-import random
-import json
+import random, sqlite3, json, pprint 
 
 statuses = ['В поиске игры', 'В игре', 'Не в игре']
 
@@ -15,7 +13,8 @@ class DB_Manager:
             conn.execute('''CREATE TABLE games (
                             game_id INTEGER PRIMARY KEY,
                             board TEXT,
-                            turn INTEGER
+                            turn INTEGER,
+                            moves_history TEXT
                         )''')
             conn.execute('''CREATE TABLE players (
                             player_id INTEGER PRIMARY KEY,
@@ -23,7 +22,8 @@ class DB_Manager:
                             color TEXT,
                             is_check INTEGER,
                             charge_count INTEGER,
-                            charge_status INTEGER
+                            charge_status INTEGER,
+                            king_super_move INTEGER
                         )''')
             conn.execute('''CREATE TABLE status (
                             status_id INTEGER PRIMARY KEY,
@@ -102,6 +102,51 @@ class DB_Manager:
                 WHERE player_id = ?'''
         result = self.__select_data(sql, (user_id,))[0]
         return result
+    
+    def add_move_to_history(self, game_id, turn_player, start_row, start_col, end_row, end_col):
+        game_info = self.get_game_info(game_id)
+        moves_history = json.loads(game_info[3])
+
+        color = self.get_player_color(turn_player.id)
+        if moves_history["W"] == {}:
+            move_number = 1
+        else:
+            move_number = int(max(list(moves_history["W"].keys())))
+            if self.get_player_color(turn_player.id) == "W":
+                move_number += 1
+
+
+        #{номер хода}. {цвет}: {ход} на {ход}
+        letters = {'a': 0, 'b': 1, 'c': 2, 'd': 3, 'e': 4, 'f': 5, 'g': 6, 'h': 7}
+        numbers = ['1', '2', '3', '4', '5', '6', '7', '8']
+
+        start_square = list(letters.keys())[start_col] + numbers[start_row]
+        end_square = list(letters.keys())[end_col] + numbers[end_row]
+        new_move = [start_square, end_square]
+
+        moves_history[color][move_number] = new_move
+
+        moves_history_json = json.dumps(moves_history)
+
+        sql = """UPDATE games 
+                SET moves_history = ?
+                WHERE game_id = ?"""
+        self.__execute(sql, (moves_history_json, game_id, ))
+
+    def get_moves_history(self, game_id) -> dict: 
+        sql = """SELECT moves_history 
+                 FROM GAMES
+                 WHERE game_id = ?"""
+        moves_history = self.__select_data(sql, (game_id,))[0][0]
+        moves_history = json.loads(moves_history)
+        pprint.pprint(moves_history)
+        if len(moves_history["W"]) > 0:
+            limited_white_moves = dict(list(moves_history["W"].items())[-10:])
+            limited_black_moves = dict(list(moves_history["B"].items())[-10:])
+
+            return limited_white_moves, limited_black_moves
+        else:
+            return False, False
 
     def get_players(self, game_id):
         sql = '''SELECT *
@@ -111,7 +156,7 @@ class DB_Manager:
         return result
     
     def get_game_info(self, game_id):
-        sql = '''SELECT board, turn
+        sql = '''SELECT *
                 FROM games
                 WHERE game_id = ?'''
         return self.__select_data(sql, (game_id,))[0]
@@ -158,6 +203,17 @@ class DB_Manager:
                     SET charge_status = 0
                     WHERE player_id = ?"""
             self.__execute(sql, (user_id,))
+        elif action == "king_super_move":
+            if value < 0:
+                sql = """UPDATE players 
+                        SET king_super_move = king_super_move - 1
+                        WHERE player_id = ?"""
+                self.__execute(sql, (user_id,))
+            else:
+                sql = """UPDATE players 
+                        SET king_super_move = ?
+                        WHERE player_id = ?"""
+                self.__execute(sql, (value, user_id,))
         else:
             sql = """SELECT user_id
                      FROM users
@@ -220,21 +276,24 @@ class DB_Manager:
             ['R_W', 'N_W', 'B_W', 'Q_W', ' ', 'B_W', 'N_W', 'R_W'],
             ['P_W', 'P_W', 'P_W', 'P_W', 'P_W', 'P_W', 'P_W', 'P_W'],
             [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
-            [' ', 'K_B', ' ', ' ', ' ', ' ', ' ', ' '],
-            [' ', 'K_W', ' ', ' ', ' ', ' ', ' ', ' '],
             [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            [' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '],
+            [' ', 'K_B', 'K_W', ' ', ' ', ' ', ' ', ' '],
             ['P_B', 'P_B', 'P_B', 'P_B', 'P_B', 'P_B', 'P_B', 'P_B'],
             ['R_B', 'N_B', 'B_B', 'Q_B', ' ', 'B_B', 'N_B', 'R_B']
         ]
         board_json = json.dumps(board)
 
-        sql = """INSERT INTO games (board, turn) VALUES (?, ?)"""
-        game_id = self.__execute(sql, (board_json, players[0]), True)
+        moves_history = {"B": {}, "W": {}}
+        moves_history_json = json.dumps(moves_history)
+
+        sql = """INSERT INTO games (board, turn, moves_history) VALUES (?, ?, ?)"""
+        game_id = self.__execute(sql, (board_json, players[0], moves_history_json), True)
         
         #Добавление в таблицу players
         for player, color in zip(players, colors):
-            sql = """INSERT INTO players (player_id, game_id, color, is_check, charge_count, charge_status) VALUES (?, ?, ?, ?, ?, ?)"""
-            self.__execute(sql, (player, game_id, color, 0, 0, 0))
+            sql = """INSERT INTO players (player_id, game_id, color, is_check, charge_count, charge_status, king_super_move) VALUES (?, ?, ?, ?, ?, ?, ?)"""
+            self.__execute(sql, (player, game_id, color, 0, 0, 0, 0))
 
             #Изменение статуса пользователя в таблицу users
             self.edit_player(player, "edit", 2)
@@ -262,7 +321,7 @@ class DB_Manager:
 
     def switch_turn(self, game_id):
         players = self.get_players(game_id)
-        turn = self.get_game_info(game_id)[1]
+        turn = self.get_game_info(game_id)[2]
 
         for player in players:
             if player[0] != turn:

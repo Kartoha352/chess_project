@@ -1,4 +1,4 @@
-import disnake, time
+import disnake, time, pprint
 from disnake.ext import commands
 from logic import DB_Manager
 from config import *
@@ -6,7 +6,7 @@ from function import update_game_info, wait_for_second_square, wait_for_first_sq
 from piece_move_checker import *
 
 intents = disnake.Intents().all()
-bot = commands.Bot(command_prefix='.', intents=intents)
+bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 checks = {"P": get_pawn_moves,
         "B": get_bishop_moves,
@@ -66,6 +66,87 @@ class Confirm_super_charge_view(disnake.ui.View):
             await inter.message.delete()
             await wait_for_first_square(self.bot, self.user, self.ctx, self.start_time)
 
+class Moves_history(disnake.ui.Button):
+    def __init__(self, turn_player, game_id):
+        self.game_id = game_id
+        self.turn_player = turn_player
+        super().__init__(label="История",
+                style=disnake.ButtonStyle.blurple,
+                custom_id = "moves_history")
+
+    async def callback(self, inter: disnake.MessageInteraction):
+        limited_white_moves, limited_black_moves = manager.get_moves_history(self.game_id)
+        if limited_white_moves:
+            turn_player = await inter.guild.fetch_member(self.turn_player.id)
+            turn_player_color = manager.get_player_color(turn_player.id)
+            opponent_player = await inter.guild.fetch_member(manager.get_opponent_player(self.game_id, turn_player.id))
+
+            min_moves = int(list(limited_white_moves.keys())[0])
+            max_moves = int(list(limited_white_moves.keys())[-1])
+
+            print(limited_white_moves)
+            print(limited_black_moves)
+
+            print(min_moves)
+            print(max_moves)
+
+            history_lines = []
+            for move_number in range(min_moves, max_moves + 1):
+                white_move = limited_white_moves.get(str(move_number), "—")
+                black_move = limited_black_moves.get(str(move_number), "—")
+                history_lines.insert(0, f"**{move_number}.** `W`: {white_move[0] + ' -> ' + white_move[1] if white_move != '—' else white_move} | `B`: {black_move[0] + ' -> ' + black_move[1] if black_move != '—' else black_move}")
+
+            history_text = "\n".join(history_lines)
+
+            if turn_player_color == "W":
+                name = f"Белые (`W`) — {turn_player.mention}\n"
+                name+= f"Чёрные (`B`) — {opponent_player.mention}"
+            else:
+                name = f"Белые (`W`) — {opponent_player.mention}\n"
+                name += f"Чёрные (`B`) — {turn_player.mention}"
+
+            emb = disnake.Embed(
+                title="История ходов",
+                description=name+"\n\n"+history_text,
+                color = disnake.Colour.from_rgb(48, 49, 54)
+            )
+
+            await inter.response.send_message(embed=emb, ephemeral=True)
+        else:
+            await inter.response.send_message("Ещё никто не походил.", ephemeral=True)
+
+        # moves_history = manager.get_moves_history(self.game_id)
+        # if len(moves_history["W"]) > 0:
+        #     turn_player = await inter.guild.fetch_member(self.turn_player.id)
+        #     turn_player_color = manager.get_player_color(turn_player.id)
+        #     opponent_player = await inter.guild.fetch_member(manager.get_opponent_player(self.game_id, turn_player.id))
+
+        #     emb = disnake.Embed(title="История ходов", color = disnake.Colour.from_rgb(48, 49, 54))
+        #     if turn_player_color == "W":
+        #         name_W = f"W - {turn_player.name}"
+        #         name_B = f"B - {opponent_player.name}"
+        #     else:
+        #         name_W = f"W - {opponent_player.name}"
+        #         name_B = f"B - {turn_player.name}"
+
+        #     value_W = ""
+        #     for move_num in moves_history["W"]:
+        #         value_W += f"`{move_num}.` {moves_history['W'][move_num]}\n"
+
+        #     value_B = ""
+        #     if len(moves_history["B"]) > 0:
+        #         for move_num in moves_history["B"]:
+        #             value_B += f"`{move_num}.`{moves_history['B'][move_num]}\n"
+        #     else:
+        #         value_B = "Пусто"
+
+        #     emb.add_field(name_W,value_W)
+        #     emb.add_field(name_B,value_B)
+
+        #     await inter.response.send_message(embed=emb, ephemeral=True)
+        # else:
+        #     await inter.response.send_message("Ещё никто не походил.", ephemeral=True)
+
 class Super_charge(disnake.ui.Button):
     def __init__(self, user:disnake.User, disabled = False):
         player = manager.get_player(user.id) #id, game_id, color, check, charge_count, charge_status
@@ -119,6 +200,52 @@ async def start(ctx:commands.Context, user:disnake.User = None):
             await ctx.reply("Вы не можете играть сами с собой, увы :(.")
     else:
         await ctx.reply("Вы не выбрали пользователя.")
+
+@bot.command(name = "super_moves")
+async def start(ctx:commands.Context):
+    await ctx.send("""# Супер-Ходы
+
+- **Пешка: «Призрачная атака»**  
+  Пешка может ходить до трех клеток вперед, даже перепрыгивая через другие фигуры. Если на конечной клетке находится фигура противника, пешка ее съест.
+
+- **Конь: «Прямой удар»**  
+  Конь может двигаться не только буквой "Г", но и буквой "I", что позволяет ему перемещаться вертикально или горизонтально на три клетки.
+
+- **Слон: «Фазовый сдвиг»**  
+  Слон может перемещаться по диагонали на любое расстояние, игнорируя препятствия.
+
+- **Ладья: «Рокировка хаоса»**  
+  Ладья может поменяться местами с королем в любой момент.
+
+- **Королева: «Командирский ход»**  
+  После своего хода королева может дать "приказ" другой фигуре, предоставив ей возможность сделать дополнительный ход/
+                         
+- **Король: «Крепость»**
+  Король может на два хода сделать все клетки вокруг себя неприступными, ни одна фигура не может атаковать фигуры под защитой короля в это время.""")
+    
+
+@bot.command(name = "help")
+async def start(ctx:commands.Context):
+    await ctx.send("""
+Запустить игру можно с помощью команды `.start <user>`. После этого вы можете начать игру.
+-# **Время на ответ - 30сек**.
+Во время игры вы должны будете выбирать клетку куда идти и писать их чат.
+-# **Время на выбор клетки - 60сек**, если вы не успели написать то победа автоматически перейдёт к противнику.
+                   
+Посмотреть доступные супер-ходы вы можете через команду `.super_moves`.
+Информация о обновлениях и о версия по команде `.check_log`
+""")
+    
+@bot.command(name = "check_log")
+async def start(ctx:commands.Context):
+    await ctx.send("""
+# v1.0 - Бот был создан
+## v1.1
+- Был добавлен супер-ход для короля.
+- Были добавлены команды `.help`, `.super_move`, `.check_log`.
+## v1.2
+- Была добавлена возможность просматривать историю ходов.
+- Так же теперь написано какой ход сделал противник чтобы проще было ориентироваться.""")
 
 # Запуск бота
 if __name__ == '__main__':

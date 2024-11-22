@@ -17,13 +17,13 @@ async def rook_super_move(player, game_id, color, board, turn_player, start_row,
     king = manager.get_king_place(game_id, color)
     manager.board_edit(game_id, [start_row, start_col], [king[0], king[1]], board[king[0]][king[1]])
 
+    manager.add_move_to_history(game_id, turn_player, start_row, start_col, king[0], king[1])
+
     #новые возможнные ходы и король противника
     moves_check = checks[board[start_row][start_col][0]]
     new_moves = moves_check(turn_player.id, board, king[0], king[1])
     opponent_color = "B" if color == "W" else "W"
     opponent_king = manager.get_king_place(game_id, opponent_color)
-    if player[4] < 10:
-        manager.edit_player(turn_player.id, "charge_count", 1)
 
     #Проверка на шах противнику
     if opponent_king in new_moves:
@@ -47,8 +47,8 @@ async def queen_super_move(player, game_id, color, board, turn_player, start_row
     new_moves = moves_check(turn_player.id, board, end_row, end_col)
     opponent_color = "B" if color == "W" else "W"
     opponent_king = manager.get_king_place(game_id, opponent_color)
-    if player[4] < 10:
-        manager.edit_player(turn_player.id, "charge_count", 1)
+
+    manager.add_move_to_history(game_id, turn_player, start_row, start_col, end_row, end_col)
 
     #Проверка на шах противнику
     if opponent_king in new_moves:
@@ -72,3 +72,21 @@ async def queen_super_move(player, game_id, color, board, turn_player, start_row
     await ctx.send("da", delete_after=5.0)
     await update_game_info(ctx, game_id, bot, "edit", None, "queen")
     return True
+
+def king_super_move_check(opponent_color, board, end_row, end_col):
+    directions = [(-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1)]
+
+    for dr, dc in directions:
+        row, col = end_row, end_col
+        row += dr
+        col += dc
+
+        # Проверка, что король не выходит за границы доски
+        if row < 0 or row >= 8 or col < 0 or col >= 8:
+            continue
+
+        # Если на клетке стоит король противника
+        if board[row][col] == "K_" + opponent_color:  # 
+           return True
+
+    return False
